@@ -41,6 +41,7 @@
 #include <bits/invoke.h>      // __invoke_r
 #include <bits/refwrap.h>     // ref wrapper, _Maybe_unary_or_binary_function
 #include <bits/functexcept.h> // __throw_bad_function_call
+#include <cstddef>            // max_align_t
 
 namespace std _GLIBCXX_VISIBILITY(default)
 {
@@ -132,6 +133,8 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
 	using _Local_storage = integral_constant<bool, __stored_locally>;
 
+	static_assert( can_dynamic || _Local_storage::value, "Functor is too big to be hosted" );
+
 	// Retrieve a pointer to the function object
 	static _Functor*
 	_M_get_pointer(const _Any_data& __source) noexcept
@@ -156,7 +159,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	  }
 
 	// Construct a function object on the heap and store a pointer.
-	template<typename _Fn>
+	template<typename _Fn> requires can_dynamic
 	  static void
 	  _M_create(_Any_data& __dest, _Fn&& __f, false_type)
 	  {
@@ -173,7 +176,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
 	// Destroy an object located on the heap.
 	static void
-	_M_destroy(_Any_data& __victim, false_type)
+	_M_destroy(_Any_data& __victim, false_type) requires can_dynamic
 	{
 	  delete __victim._M_access<_Functor*>();
 	}
@@ -791,6 +794,9 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
   template<typename T>
   using function = versatile::function<true, sizeof(_Nocopy_types), __alignof__(_Nocopy_types), T>;
+
+  template<size_t hosted_size, typename T>
+  using constant_size_function = versatile::function<false,hosted_size,alignof(std::max_align_t),T>;
 
 #if __cplusplus >= 201703L
   namespace __detail::__variant
