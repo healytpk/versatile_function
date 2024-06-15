@@ -111,11 +111,12 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     class function;
 
   /// Base class of all polymorphic function object wrappers.
+  template<bool can_dynamic, size_t hosted_size, size_t hosted_align>
   class _Function_base
   {
   public:
-    static const size_t _M_max_size = sizeof(_Nocopy_types);
-    static const size_t _M_max_align = __alignof__(_Nocopy_types);
+    static const size_t _M_max_size  = hosted_size ;
+    static const size_t _M_max_align = hosted_align;
 
     template<typename _Functor>
       class _Base_manager
@@ -253,14 +254,14 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     _Manager_type _M_manager{};
   };
 
-  template<typename _Signature, typename _Functor>
+  template<bool can_dynamic, size_t hosted_size, size_t hosted_align, typename _Signature, typename _Functor>
     class _Function_handler;
 
-  template<typename _Res, typename _Functor, typename... _ArgTypes>
-    class _Function_handler<_Res(_ArgTypes...), _Functor>
-    : public _Function_base::_Base_manager<_Functor>
+  template<bool can_dynamic, size_t hosted_size, size_t hosted_align, typename _Res, typename _Functor, typename... _ArgTypes>
+    class _Function_handler<can_dynamic, hosted_size, hosted_align, _Res(_ArgTypes...), _Functor>
+    : public _Function_base<can_dynamic, hosted_size, hosted_align>::_Base_manager<_Functor>
     {
-      using _Base = _Function_base::_Base_manager<_Functor>;
+      using _Base = _Function_base<can_dynamic, hosted_size, hosted_align>::template _Base_manager<_Functor>;
 
     public:
       static bool
@@ -301,8 +302,8 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     };
 
   // Specialization for invalid types
-  template<>
-    class _Function_handler<void, void>
+  template<bool can_dynamic, size_t hosted_size, size_t hosted_align>
+    class _Function_handler<can_dynamic, hosted_size, hosted_align, void, void>
     {
     public:
       static bool
@@ -314,15 +315,15 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   // in std::function<_Signature>::target<_Functor>().
   // e.g. _Function_handler<Sig, void()> and _Function_handler<Sig, void>
   // would be ill-formed.
-  template<typename _Signature, typename _Functor,
+  template<bool can_dynamic, size_t hosted_size, size_t hosted_align, typename _Signature, typename _Functor,
 	   bool __valid = is_object<_Functor>::value>
     struct _Target_handler
-    : _Function_handler<_Signature, typename remove_cv<_Functor>::type>
+    : _Function_handler<can_dynamic, hosted_size, hosted_align, _Signature, typename remove_cv<_Functor>::type>
     { };
 
-  template<typename _Signature, typename _Functor>
-    struct _Target_handler<_Signature, _Functor, false>
-    : _Function_handler<void, void>
+  template<bool can_dynamic, size_t hosted_size, size_t hosted_align, typename _Signature, typename _Functor>
+    struct _Target_handler<can_dynamic, hosted_size, hosted_align, _Signature, _Functor, false>
+    : _Function_handler<can_dynamic, hosted_size, hosted_align, void, void>
     { };
 
   /**
@@ -333,8 +334,11 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   template<typename _Res, typename... _ArgTypes>
     class function<_Res(_ArgTypes...)>
     : public _Maybe_unary_or_binary_function<_Res, _ArgTypes...>,
-      private _Function_base
+      private _Function_base< true, sizeof(_Nocopy_types), __alignof__(_Nocopy_types) >
     {
+      inline static constexpr bool   can_dynamic = true;
+      inline static constexpr size_t hosted_size   = sizeof(_Nocopy_types);
+      inline static constexpr size_t hosted_align  = __alignof__(_Nocopy_types);
       // Equivalent to std::decay_t except that it produces an invalid type
       // if the decayed type is the current specialization of std::function.
       template<typename _Func,
@@ -354,7 +358,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
       template<typename _Functor>
 	using _Handler
-	  = _Function_handler<_Res(_ArgTypes...), __decay_t<_Functor>>;
+	  = _Function_handler<can_dynamic, hosted_size, hosted_align, _Res(_ArgTypes...), __decay_t<_Functor>>;
 
     public:
       typedef _Res result_type;
@@ -646,7 +650,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	    {
 	      // For C++11 and C++14 if-constexpr is not used above, so
 	      // _Target_handler avoids ill-formed _Function_handler types.
-	      using _Handler = _Target_handler<_Res(_ArgTypes...), _Functor>;
+	      using _Handler = _Target_handler<can_dynamic, hosted_size, hosted_align, _Res(_ArgTypes...), _Functor>;
 
 	      if (_M_manager == &_Handler::_M_manager
 #if __cpp_rtti
