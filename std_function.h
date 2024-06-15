@@ -107,8 +107,10 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     __destroy_functor
   };
 
-  template<typename _Signature>
+  namespace versatile {
+  template<bool can_dynamic, size_t hosted_size, size_t hosted_align, typename _Signature>
     class function;
+  }
 
   /// Base class of all polymorphic function object wrappers.
   template<bool can_dynamic, size_t hosted_size, size_t hosted_align>
@@ -218,7 +220,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
 	template<typename _Signature>
 	  static bool
-	  _M_not_empty_function(const function<_Signature>& __f) noexcept
+	  _M_not_empty_function(const versatile::function<can_dynamic,hosted_size,hosted_align,_Signature>& __f) noexcept
 	  { return static_cast<bool>(__f); }
 
 	template<typename _Tp>
@@ -331,14 +333,15 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
    *  @ingroup functors
    *  @since C++11
    */
-  template<typename _Res, typename... _ArgTypes>
-    class function<_Res(_ArgTypes...)>
+  template<bool can_dynamic, size_t hosted_size, size_t hosted_align, typename _Res, typename... _ArgTypes>
+    class versatile::function<can_dynamic,hosted_size,hosted_align,_Res(_ArgTypes...)>
     : public _Maybe_unary_or_binary_function<_Res, _ArgTypes...>,
-      private _Function_base< true, sizeof(_Nocopy_types), __alignof__(_Nocopy_types) >
+      private _Function_base<can_dynamic,hosted_size,hosted_align>
     {
-      inline static constexpr bool   can_dynamic = true;
-      inline static constexpr size_t hosted_size   = sizeof(_Nocopy_types);
-      inline static constexpr size_t hosted_align  = __alignof__(_Nocopy_types);
+	  using _Function_base<can_dynamic,hosted_size,hosted_align>::_M_functor;
+	  using _Function_base<can_dynamic,hosted_size,hosted_align>::_M_manager;
+	  using _Function_base<can_dynamic,hosted_size,hosted_align>::_M_empty  ;
+
       // Equivalent to std::decay_t except that it produces an invalid type
       // if the decayed type is the current specialization of std::function.
       template<typename _Func,
@@ -370,14 +373,14 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
        *  @post `!(bool)*this`
        */
       function() noexcept
-      : _Function_base() { }
+      : _Function_base<can_dynamic,hosted_size,hosted_align>() { }
 
       /**
        *  @brief Creates an empty function call wrapper.
        *  @post @c !(bool)*this
        */
       function(nullptr_t) noexcept
-      : _Function_base() { }
+      : _Function_base<can_dynamic,hosted_size,hosted_align>() { }
 
       /**
        *  @brief %Function copy constructor.
@@ -388,7 +391,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
        *  `__x` (if it has one).
        */
       function(const function& __x)
-      : _Function_base()
+      : _Function_base<can_dynamic,hosted_size,hosted_align>()
       {
 	if (static_cast<bool>(__x))
 	  {
@@ -406,7 +409,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
        *  (if it has one).
        */
       function(function&& __x) noexcept
-      : _Function_base(), _M_invoker(__x._M_invoker)
+      : _Function_base<can_dynamic,hosted_size,hosted_align>(), _M_invoker(__x._M_invoker)
       {
 	if (static_cast<bool>(__x))
 	  {
@@ -438,7 +441,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	       typename _Constraints = _Requires<_Callable<_Functor>>>
 	function(_Functor&& __f)
 	noexcept(_Handler<_Functor>::template _S_nothrow_init<_Functor>())
-	: _Function_base()
+	: _Function_base<can_dynamic,hosted_size,hosted_align>()
 	{
 	  static_assert(is_copy_constructible<__decay_t<_Functor>>::value,
 	      "std::function target must be copy-constructible");
@@ -720,13 +723,17 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     using __function_guide_t = typename __function_guide_helper<_Op>::type;
 #endif
 
-  template<typename _Res, typename... _ArgTypes>
-    function(_Res(*)(_ArgTypes...)) -> function<_Res(_ArgTypes...)>;
+  namespace versatile {
+  template<bool can_dynamic, size_t hosted_size, size_t hosted_align, typename _Res, typename... _ArgTypes>
+    function(_Res(*)(_ArgTypes...)) -> function<can_dynamic,hosted_size,hosted_align,_Res(_ArgTypes...)>;
 
-  template<typename _Fn, typename _Signature
+  template<bool can_dynamic, size_t hosted_size, size_t hosted_align, typename _Fn, typename _Signature
 	     = __function_guide_t<_Fn, decltype(&_Fn::operator())>>
-    function(_Fn) -> function<_Signature>;
+    function(_Fn) -> versatile::function<can_dynamic,hosted_size,hosted_align,_Signature>;
+  }
 #endif
+
+  namespace versatile {
 
   // [20.7.15.2.6] null pointer comparisons
 
@@ -736,9 +743,9 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
    *
    *  This function will not throw exceptions.
    */
-  template<typename _Res, typename... _Args>
+  template<bool can_dynamic, size_t hosted_size, size_t hosted_align, typename _Res, typename... _Args>
     inline bool
-    operator==(const function<_Res(_Args...)>& __f, nullptr_t) noexcept
+    operator==(const function<can_dynamic,hosted_size,hosted_align,_Res(_Args...)>& __f, nullptr_t) noexcept
     { return !static_cast<bool>(__f); }
 
 #if __cpp_impl_three_way_comparison < 201907L
@@ -766,6 +773,8 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     { return static_cast<bool>(__f); }
 #endif
 
+  }
+
   // [20.7.15.2.7] specialized algorithms
 
   /**
@@ -775,10 +784,13 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
    */
   // _GLIBCXX_RESOLVE_LIB_DEFECTS
   // 2062. Effect contradictions w/o no-throw guarantee of std::function swaps
-  template<typename _Res, typename... _Args>
+  template<bool can_dynamic, size_t hosted_size, size_t hosted_align, typename _Res, typename... _Args>
     inline void
-    swap(function<_Res(_Args...)>& __x, function<_Res(_Args...)>& __y) noexcept
+    swap(versatile::function<can_dynamic,hosted_size,hosted_align,_Res(_Args...)>& __x, versatile::function<can_dynamic,hosted_size,hosted_align,_Res(_Args...)>& __y) noexcept
     { __x.swap(__y); }
+
+  template<typename T>
+  using function = versatile::function<true, sizeof(_Nocopy_types), __alignof__(_Nocopy_types), T>;
 
 #if __cplusplus >= 201703L
   namespace __detail::__variant
